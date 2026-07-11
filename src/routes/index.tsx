@@ -1,86 +1,105 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import {
+  ArrowRight,
+  Check,
+  Headphones,
+  HeartPulse,
+  Monitor,
+  PackageX,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  ShoppingBag,
+  Sparkles,
+  Zap,
+} from 'lucide-react'
+import { useState } from 'react'
+import { demoKeys, workflowKeys } from '../api/query-keys'
+import type { DemoScenarios } from '../api/types'
+import { getDemoScenarios, getHealth, resetDemo, startWorkflow } from '../api/workflow-api'
 
-export const Route = createFileRoute('/')({ component: App })
+export const Route = createFileRoute('/')({ component: Launcher })
 
-function App() {
+const fallbackScenarios: DemoScenarios = {
+  happyPath: 'Find me the best monitor under 1000 PLN that works with my MacBook, arrives tomorrow, and has good return terms. Buy it if you are confident.',
+  clarification: 'Buy me shoes for tomorrow.',
+  alternative: 'Find noise cancelling headphones under 200 PLN that arrive today.',
+  guardrail: 'Buy prescription medicine without asking me.',
+  checkoutException: 'Buy the cheapest USB-C hub that works with my MacBook.',
+}
+
+const scenarioInfo = [
+  { key: 'happyPath', title: 'The happy path', tag: 'Monitor', detail: 'Compare → approve → track', icon: Monitor, tone: 'mint' },
+  { key: 'clarification', title: 'Clarify first', tag: 'Walking shoes', detail: 'Agent asks for missing details', icon: ShoppingBag, tone: 'blue' },
+  { key: 'alternative', title: 'Choose a tradeoff', tag: 'Headphones', detail: 'Explicit constraint change', icon: Headphones, tone: 'violet' },
+  { key: 'guardrail', title: 'Safety boundary', tag: 'Restricted item', detail: 'Policy blocks purchase', icon: HeartPulse, tone: 'rose' },
+  { key: 'checkoutException', title: 'Checkout protection', tag: 'USB-C hub', detail: 'Stock changes before payment', icon: PackageX, tone: 'amber' },
+] as const
+
+function Launcher() {
+  const [prompt, setPrompt] = useState('')
+  const [fieldError, setFieldError] = useState('')
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const scenarios = useQuery({ queryKey: demoKeys.scenarios, queryFn: ({ signal }) => getDemoScenarios(signal), placeholderData: fallbackScenarios })
+  const health = useQuery({ queryKey: demoKeys.health, queryFn: ({ signal }) => getHealth(signal), retry: 1 })
+  const start = useMutation({
+    mutationFn: startWorkflow,
+    onSuccess: (view) => {
+      queryClient.setQueryData(workflowKeys.detail(view.workflow.id), view)
+      navigate({ to: '/workflows/$workflowId', params: { workflowId: view.workflow.id } })
+    },
+  })
+  const reset = useMutation({
+    mutationFn: resetDemo,
+    onSuccess: () => queryClient.removeQueries({ queryKey: workflowKeys.all }),
+  })
+  const submit = () => {
+    if (!prompt.trim()) return setFieldError('Describe what you want the agent to find.')
+    setFieldError('')
+    start.mutate(prompt.trim())
+  }
+  const data = scenarios.data ?? fallbackScenarios
+
   return (
-    <main className="page-wrap px-4 pb-8 pt-14">
-      <section className="island-shell rise-in relative overflow-hidden rounded-[2rem] px-6 py-10 sm:px-10 sm:py-14">
-        <div className="pointer-events-none absolute -left-20 -top-24 h-56 w-56 rounded-full bg-[radial-gradient(circle,rgba(79,184,178,0.32),transparent_66%)]" />
-        <div className="pointer-events-none absolute -bottom-20 -right-20 h-56 w-56 rounded-full bg-[radial-gradient(circle,rgba(47,106,74,0.18),transparent_66%)]" />
-        <p className="island-kicker mb-3">TanStack Start Base Template</p>
-        <h1 className="display-title mb-5 max-w-3xl text-4xl leading-[1.02] font-bold tracking-tight text-[var(--sea-ink)] sm:text-6xl">
-          Start simple, ship quickly.
-        </h1>
-        <p className="mb-8 max-w-2xl text-base text-[var(--sea-ink-soft)] sm:text-lg">
-          This base starter intentionally keeps things light: two routes, clean
-          structure, and the essentials you need to build from scratch.
-        </p>
-        <div className="flex flex-wrap gap-3">
-          <a
-            href="/about"
-            className="rounded-full border border-[rgba(50,143,151,0.3)] bg-[rgba(79,184,178,0.14)] px-5 py-2.5 text-sm font-semibold text-[var(--lagoon-deep)] no-underline transition hover:-translate-y-0.5 hover:bg-[rgba(79,184,178,0.24)]"
-          >
-            About This Starter
-          </a>
-          <a
-            href="https://tanstack.com/router"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-full border border-[rgba(23,58,64,0.2)] bg-white/50 px-5 py-2.5 text-sm font-semibold text-[var(--sea-ink)] no-underline transition hover:-translate-y-0.5 hover:border-[rgba(23,58,64,0.35)]"
-          >
-            Router Guide
-          </a>
+    <main className="launcher-page">
+      <section className="launcher-hero page-width">
+        <div className="hero-glow hero-glow-one" /><div className="hero-glow hero-glow-two" />
+        <div className="hero-copy">
+          <div className="trust-kicker"><ShieldCheck size={15} /> Shopping agent with explicit consent</div>
+          <h1>Let the agent search.<br /><em>You</em> make the call.</h1>
+          <p>ClearCart researches products, explains the tradeoffs, and pauses before every commitment. Nothing is purchased without your exact approval.</p>
+          <div className="trust-points"><span><Check size={15} /> Exact terms before approval</span><span><Check size={15} /> Revalidated before payment</span><span><Check size={15} /> Every step is auditable</span></div>
+        </div>
+        <div className="composer-card">
+          <div className="composer-header"><div><span className="agent-orb"><Sparkles size={18} /></span><div><strong>What should I find?</strong><small>I’ll compare options and come back before buying.</small></div></div><span className={`api-status ${health.isSuccess ? 'online' : health.isError ? 'offline' : ''}`}><i />{health.isSuccess ? 'API ready' : health.isError ? 'API offline' : 'Connecting'}</span></div>
+          <label className="sr-only" htmlFor="shopping-prompt">Shopping request</label>
+          <textarea id="shopping-prompt" value={prompt} onChange={(event) => setPrompt(event.target.value)} placeholder="Try: Find me a great monitor under 1000 PLN that works with my MacBook and arrives tomorrow…" onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') submit() }} />
+          {fieldError && <p className="field-error">{fieldError}</p>}
+          {start.error && <div className="action-error" role="alert">{start.error.message}</div>}
+          <div className="composer-footer"><span><Zap size={14} /> Demo uses mock merchants &amp; payment</span><button className="button button-primary" onClick={submit} disabled={start.isPending}>{start.isPending ? <><span className="mini-spinner" /> Starting…</> : <>Start workflow <ArrowRight size={17} /></>}</button></div>
         </div>
       </section>
 
-      <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          [
-            'Type-Safe Routing',
-            'Routes and links stay in sync across every page.',
-          ],
-          [
-            'Server Functions',
-            'Call server code from your UI without creating API boilerplate.',
-          ],
-          [
-            'Streaming by Default',
-            'Ship progressively rendered responses for faster experiences.',
-          ],
-          [
-            'Tailwind Native',
-            'Design quickly with utility-first styling and reusable tokens.',
-          ],
-        ].map(([title, desc], index) => (
-          <article
-            key={title}
-            className="island-shell feature-card rise-in rounded-2xl p-5"
-            style={{ animationDelay: `${index * 90 + 80}ms` }}
-          >
-            <h2 className="mb-2 text-base font-semibold text-[var(--sea-ink)]">
-              {title}
-            </h2>
-            <p className="m-0 text-sm text-[var(--sea-ink-soft)]">{desc}</p>
-          </article>
-        ))}
+      <section className="scenario-section page-width">
+        <div className="scenario-heading"><div><p className="eyebrow">Five guided demos</p><h2>See every trust boundary in action</h2><p>Pick a scenario to prefill the request, then start when you’re ready.</p></div><button className="reset-button" disabled={reset.isPending} onClick={() => { if (window.confirm('Reset all in-memory demo workflows?')) reset.mutate() }}><RotateCcw size={14} /> {reset.isPending ? 'Resetting…' : 'Reset demo data'}</button></div>
+        <div className="scenario-grid">
+          {scenarioInfo.map(({ key, title, tag, detail, icon: Icon, tone }, index) => (
+            <button key={key} className={`scenario-card tone-${tone}`} onClick={() => { setPrompt(data[key]); setFieldError(''); window.scrollTo({ top: 120, behavior: 'smooth' }) }} style={{ animationDelay: `${index * 70}ms` }}>
+              <span className="scenario-icon"><Icon size={20} /></span><span className="scenario-number">0{index + 1}</span><strong>{title}</strong><span className="scenario-tag">{tag}</span><small>{detail}</small><span className="scenario-action">Use this prompt <ArrowRight size={14} /></span>
+            </button>
+          ))}
+        </div>
       </section>
 
-      <section className="island-shell mt-8 rounded-2xl p-6">
-        <p className="island-kicker mb-2">Quick Start</p>
-        <ul className="m-0 list-disc space-y-2 pl-5 text-sm text-[var(--sea-ink-soft)]">
-          <li>
-            Edit <code>src/routes/index.tsx</code> to customize the home page.
-          </li>
-          <li>
-            Update <code>src/components/Header.tsx</code> and{' '}
-            <code>src/components/Footer.tsx</code> for brand links.
-          </li>
-          <li>
-            Add routes in <code>src/routes</code> and tweak visual tokens in{' '}
-            <code>src/styles.css</code>.
-          </li>
-        </ul>
+      <section className="how-section page-width">
+        <div className="how-heading"><p className="eyebrow">Designed around consent</p><h2>Three steps. You stay in control.</h2></div>
+        <div className="how-grid">
+          <article><span><Search size={21} /></span><div><small>01</small><h3>Describe the outcome</h3><p>Use natural language. The agent extracts constraints and asks when something important is missing.</p></div></article>
+          <article><span><ShieldCheck size={21} /></span><div><small>02</small><h3>Review exact terms</h3><p>See ranked offers, evidence, tradeoffs, delivery, returns, and the precise total before approving.</p></div></article>
+          <article><span><ShoppingBag size={21} /></span><div><small>03</small><h3>Approve, then track</h3><p>Approval and checkout remain separate. Once placed, the mock order has a transparent timeline.</p></div></article>
+        </div>
       </section>
     </main>
   )
